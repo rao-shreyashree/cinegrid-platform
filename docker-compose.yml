@@ -1,0 +1,15 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: cinegrid-db
+    environment:
+      POSTGRES_USER: cinegrid
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: cinegrid
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/ddl:/docker-entrypoint-initdb.d
+volumes:
+  pgdata:
