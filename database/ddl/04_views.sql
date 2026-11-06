@@ -46,3 +46,13 @@ LEFT JOIN (SELECT i.production_id, SUM(pm.amount) AS paid
            FROM payment pm JOIN invoice i ON i.invoice_id = pm.invoice_id
            GROUP BY i.production_id) pay
        ON pay.production_id = p.production_id;
+
+-- Effective equipment status: MAINTENANCE overrides; IN_USE if a booking covers right now
+CREATE VIEW v_equipment_status AS
+SELECT e.equipment_id, e.name, e.category, e.serial_number,
+       CASE WHEN e.status = 'MAINTENANCE' THEN 'MAINTENANCE'
+            WHEN EXISTS (SELECT 1 FROM equipment_booking eb
+                         WHERE eb.equipment_id = e.equipment_id AND eb.status <> 'CANCELLED'
+                           AND eb.during @> LOCALTIMESTAMP) THEN 'IN_USE'
+            ELSE 'AVAILABLE' END AS current_status
+FROM equipment e;

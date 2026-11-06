@@ -4,6 +4,9 @@
 CREATE EXTENSION IF NOT EXISTS vector;      -- pgvector
 CREATE EXTENSION IF NOT EXISTS btree_gist;  -- needed for EXCLUDE (equality + range overlap)
 
+-- Shoot times are stored as local (IST) wall-clock times, so make "now" IST too
+DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), 'Asia/Kolkata'); END $$;
+
 -- ---------- Identity ----------
 CREATE TABLE role (
     role_id    INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -67,7 +70,7 @@ CREATE TABLE equipment (
                    CHECK (category IN ('camera','lighting','sound','grip','other')),
     serial_number  VARCHAR(255) NOT NULL UNIQUE,
     status         VARCHAR(255) NOT NULL DEFAULT 'AVAILABLE'
-                   CHECK (status IN ('AVAILABLE','IN_USE','MAINTENANCE')),
+                   CHECK (status IN ('AVAILABLE','MAINTENANCE')),   -- 'in use' is computed, see v_equipment_status
     rental_price   DECIMAL(12,2) NOT NULL DEFAULT 0 CHECK (rental_price >= 0), -- per hour
     description    TEXT,
     embedding      vector(384)
