@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* CineGrid theme: soundstage concrete + gaffer-tape colours. */
+@theme {
+  --color-floor: #e3e6ea;     /* page: stage-floor concrete */
+  --color-panel: #f4f5f7;     /* surfaces */
+  --color-ink: #172033;       /* text, primary buttons */
+  --color-muted: #566073;
+  --color-rule: #c3c9d2;
+  --color-slate: #1b2631;     /* clapperboard */
+  --color-chalk: #eceef2;
+  --color-tape: #f5c518;      /* marker / primary accent */
+  --color-tape-dark: #d9ab08;
+  --color-alert: #c93a3a;
+
+  --font-sans: "Instrument Sans Variable", system-ui, "Segoe UI", sans-serif;
+  --font-display: "Bricolage Grotesque Variable", system-ui, "Segoe UI", sans-serif;
+}
+
+body {
+  background: var(--color-floor);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-tape);
+  outline-offset: 2px;
+}
+
+/* ---------- Clapperboard (login) ---------- */
+@layer components {
+  .clapper {
+    position: relative;
+    padding-top: 30px;
+  }
+  .clapper-arm,
+  .clapper-stick {
+    height: 30px;
+    background: repeating-linear-gradient(115deg, var(--color-chalk) 0 26px, var(--color-slate) 26px 52px);
+    border: 2px solid var(--color-slate);
+  }
+  .clapper-arm {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    border-radius: 4px 4px 0 0;
+    transform-origin: 4% 100%;
+    transform: rotate(-9deg);
+    transition: transform 140ms ease-in;
+  }
+  .clapper-arm.clap {
+    transform: rotate(0deg);
+  }
+  .clapper-stick {
+    border-bottom: 0;
+    background-position: 26px 0;
+  }
+  .board {
+    background: var(--color-slate);
+    color: var(--color-chalk);
+    border-radius: 0 0 8px 8px;
+    padding: 28px 32px 32px;
+  }
+  .board input {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid #5d6b7c;
+    padding: 6px 0 8px;
+    color: var(--color-chalk);
+    font-size: 1.05rem;
+  }
+  .board input:focus {
+    outline: none;
+    border-bottom: 2px solid var(--color-tape);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clapper-arm { transition: none; }
+}
