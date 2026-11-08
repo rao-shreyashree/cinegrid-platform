@@ -154,9 +154,6 @@ CREATE TABLE equipment_booking (
         WHERE (status <> 'CANCELLED')
 );
 
--- one active booking per item per slot; cancelled ones don't block a rebook
-CREATE UNIQUE INDEX uq_equip_booking_active
-    ON equipment_booking(schedule_id, equipment_id) WHERE status <> 'CANCELLED';
 CREATE TABLE service_booking (
     service_booking_id  INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     production_id       INT NOT NULL REFERENCES production(production_id),

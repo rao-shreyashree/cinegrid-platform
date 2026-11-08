@@ -17,19 +17,17 @@ Reads DATABASE_URL from .env. Re-runnable only on a fresh DB (docker compose dow
 import os
 import random
 import sys
-from datetime import date, datetime, time, timedelta
+from datetime import time, timedelta
 from decimal import Decimal
 
 import psycopg
 from dotenv import load_dotenv
-from faker import Faker
 
 load_dotenv()
 rnd = random.Random(7)
-fake = Faker("en_IN")
-Faker.seed(7)
 
-TODAY = date.today()
+TODAY = None  # set from the DB clock in main(), so "today" always matches CURRENT_DATE
+NOW = None    # same for "now" (DB session time, IST)
 N_PRODUCTIONS = 28
 
 # ---------------------------------------------------------------- reference data
@@ -237,10 +235,11 @@ def seed_productions(cur):
     return prods
 
 
-def try_book(conn, cur, scene_id, rtype, p, dur, locs, all_locs):
-    """Try up to 12 slots through book_location(); return (schedule_id, day) or None."""
-    for attempt in range(12):
-        loc = rnd.choice(locs[rtype] if attempt < 8 else all_locs)
+def try_book(conn, cur, scene_id, rtype, p, dur, locs):
+    """Try up to 20 slots, only in locations of the scene's required type, through
+    book_location(); return (schedule_id, day) or None (the scene stays unscheduled)."""
+    for attempt in range(20):
+        loc = rnd.choice(locs[rtype])
         day = pick_day(p, allow_today=(attempt == 0))
         start_min = rnd.randrange(6 * 60, 15 * 60 + 1, 30)
         end_min = start_min + dur
@@ -257,10 +256,8 @@ def try_book(conn, cur, scene_id, rtype, p, dur, locs, all_locs):
 def seed_scenes_and_schedules(conn, cur, prods):
     cur.execute("SELECT location_id, type FROM location WHERE status = 'AVAILABLE'")
     locs = {t: [] for t in LOC_TYPES}
-    all_locs = []
     for lid, typ in cur.fetchall():
         locs[typ].append(lid)
-        all_locs.append(lid)
 
     n_scenes = n_sched = n_unbooked = 0
     active = []  # schedule_ids that still count (not cancelled)
@@ -285,7 +282,7 @@ def seed_scenes_and_schedules(conn, cur, prods):
             if p["status"] == "PRE_PRODUCTION" and rnd.random() > 0.6:
                 continue  # not everything is scheduled yet in pre-production
 
-            booked = try_book(conn, cur, sid, rtype, p, dur, locs, all_locs)
+            booked = try_book(conn, cur, sid, rtype, p, dur, locs)
             if not booked:
                 n_unbooked += 1
                 continue
@@ -337,7 +334,7 @@ def seed_incidents(cur):
     for typ in plan:
         eid = eq_pool.pop() if typ == "equipment_damage" else None
         lid = loc_pool.pop() if typ == "location_damage" else None
-        reported = datetime.now() - timedelta(days=rnd.randint(1, 90), hours=rnd.randint(0, 23))
+        reported = NOW - timedelta(days=rnd.randint(1, 90), hours=rnd.randint(0, 23))
         # Inserted as OPEN: the insert trigger puts damaged items into MAINTENANCE.
         cur.execute(
             "INSERT INTO incident(type,equipment_id,location_id,reported_by,description,reported_at) "
@@ -349,7 +346,7 @@ def seed_incidents(cur):
         target = rnd.choices(["RESOLVED", "IN_PROGRESS", "OPEN"], weights=[6, 2, 2])[0]
         if target == "RESOLVED":
             # The resolve trigger puts the item back to AVAILABLE if nothing else is open on it.
-            resolved = min(reported + timedelta(hours=rnd.randint(4, 120)), datetime.now())
+            resolved = min(reported + timedelta(hours=rnd.randint(4, 120)), NOW)
             cur.execute("UPDATE incident SET status='RESOLVED', resolved_at=%s, resolution_notes=%s "
                         "WHERE incident_id=%s",
                         (resolved, "Inspected and fixed; cleared for use.", inc_id))
@@ -359,12 +356,15 @@ def seed_incidents(cur):
 
 
 def main():
+    global TODAY, NOW
     url = os.environ.get("DATABASE_URL")
     if not url:
         sys.exit("DATABASE_URL not set (put it in .env)")
 
     with psycopg.connect(url) as conn:  # one transaction per run; commits on success
         cur = conn.cursor()
+        cur.execute("SELECT CURRENT_DATE, LOCALTIMESTAMP")  # DB clock (IST), not the laptop's
+        TODAY, NOW = cur.fetchone()
         cur.execute("SELECT count(*) FROM production_house")
         if cur.fetchone()[0] == 0:
             sys.exit("No base data found. Run seed_people_finance.py --base first.")
