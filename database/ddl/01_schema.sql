@@ -46,7 +46,8 @@ CREATE TABLE crew_member (
 CREATE TABLE vendor (
     vendor_id     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name          VARCHAR(255) NOT NULL,
-    contact_info  VARCHAR(255)
+    contact_info  VARCHAR(255),
+    vendor_type VARCHAR(255) NOT NULL DEFAULT 'other' CHECK (vendor_type IN ('catering','transport','costume','security','other'))
 );
 
 -- ---------- Resources ----------
