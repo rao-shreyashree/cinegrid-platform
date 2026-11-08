@@ -44,17 +44,18 @@ CREW_ROLES = ["Director of Photography", "Gaffer", "Sound Engineer", "Makeup Art
               "Art Director", "Editor", "Boom Operator", "Script Supervisor",
               "Stunt Coordinator", "Focus Puller"]
 
-# (name suffix, service_name used in bookings, hourly rate range in INR)
+# (name suffix, service_name used in bookings, hourly rate range in INR, vendor_type)
 VENDOR_TYPES = [
     ("Catering Co", "Catering", (800, 2500), "catering"),
     ("Transport Services", "Transport", (500, 1800), "transport"),
     ("Security Services", "Security", (400, 1200), "security"),
     ("Costumes", "Costume Rental", (600, 2000), "costume"),
-    ("Makeup Studio", "Makeup & Hair", (700, 2200), "other"),
-    ("VFX Labs", "VFX Support", (1500, 5000), "other"),
-    ("Power & Generators", "Generator & Power", (900, 2800), "other"),
-    ("Sets & Props", "Props Supply", (600, 2400), "other"),
+    ("Makeup Studio", "Makeup & Hair", (700, 2200), "makeup"),
+    ("VFX Labs", "VFX Support", (1500, 5000), "vfx"),
+    ("Power & Generators", "Generator & Power", (900, 2800), "power"),
+    ("Sets & Props", "Props Supply", (600, 2400), "props"),
 ]
+SERVICE_BY_TYPE = {vt: (service, rate) for _, service, rate, vt in VENDOR_TYPES}
 
 PAY_METHODS = ["UPI", "NEFT", "CHEQUE", "CARD"]
 
@@ -100,9 +101,9 @@ def seed_base(conn):
         if uid:  # keep the login name consistent with the crew record
             cur.execute("UPDATE users SET name=%s WHERE user_id=%s", (name, uid))
 
-        for i in range(N_VENDORS):
-            suffix, _, _, v_type = VENDOR_TYPES[i % len(VENDOR_TYPES)]
-            cur.execute("INSERT INTO vendor(name,contact_info,vendor_type) VALUES (%s,%s,%s)",
+    for v in range(N_VENDORS):
+        suffix, _, _, v_type = VENDOR_TYPES[v % len(VENDOR_TYPES)]
+        cur.execute("INSERT INTO vendor(name,contact_info,vendor_type) VALUES (%s,%s,%s)",
                     (f"{fake.last_name()} {suffix}", fake.company_email(), v_type))
 
     print(f"base: 1 admin, {N_MANAGERS} managers, {N_CREW_USERS} crew users, {N_HOUSES} houses, "
@@ -154,12 +155,7 @@ def seed_finance(conn):
 
     # ---- service bookings ----
     cur.execute("SELECT vendor_id, vendor_type FROM vendor")
-    vendors = []
-    for vid, v_type in cur.fetchall():
-        for suffix, service, rate, vt in VENDOR_TYPES:
-            if v_type == vt:
-                vendors.append((vid, service, rate))
-                break # avoid duplicates
+    vendors = [(vid, *SERVICE_BY_TYPE[vt]) for vid, vt in cur.fetchall()]
     cur.execute("SELECT production_id, start_date, planned_end_date, status FROM production")
     productions = cur.fetchall()
 
