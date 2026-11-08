@@ -78,8 +78,11 @@ BEGIN
         INSERT INTO equipment_booking (schedule_id, equipment_id, charge)
         VALUES (p_schedule_id, p_equipment_id, ROUND(v_eq.rental_price * range_hours(v_sched.during), 2))
         RETURNING equip_booking_id INTO v_id;
-    EXCEPTION WHEN exclusion_violation THEN
-        RAISE EXCEPTION 'Resource conflict detected: "%" is already booked for that time', v_eq.name;
+    EXCEPTION
+        WHEN exclusion_violation THEN
+            RAISE EXCEPTION 'Resource conflict detected: "%" is already booked for that time', v_eq.name;
+        WHEN unique_violation THEN
+            RAISE EXCEPTION '"%" is already booked on this schedule', v_eq.name;
     END;
 
     RETURN v_id;

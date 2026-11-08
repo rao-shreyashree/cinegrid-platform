@@ -100,7 +100,7 @@ CREATE TABLE scene (
     production_id           INT NOT NULL REFERENCES production(production_id) ON DELETE CASCADE,
     scene_number            INT NOT NULL,
     description             TEXT,
-    required_location_type  VARCHAR(255),
+    required_location_type  VARCHAR(255)  CHECK (required_location_type IN ('studio','sound_stage','outdoor','backlot','set')),
     planned_duration        INT CHECK (planned_duration > 0),   -- minutes
     priority                VARCHAR(255) CHECK (priority IN ('LOW','MEDIUM','HIGH')),
     status                  VARCHAR(255) NOT NULL DEFAULT 'PLANNED'
@@ -151,10 +151,12 @@ CREATE TABLE equipment_booking (
     during            tsrange,   -- copied from shooting_schedule by trigger (see 03_triggers.sql)
     CONSTRAINT no_equipment_overlap
         EXCLUDE USING gist (equipment_id WITH =, during WITH &&)
-        WHERE (status <> 'CANCELLED'),
-    UNIQUE (schedule_id, equipment_id)
+        WHERE (status <> 'CANCELLED')
 );
 
+-- one active booking per item per slot; cancelled ones don't block a rebook
+CREATE UNIQUE INDEX uq_equip_booking_active
+    ON equipment_booking(schedule_id, equipment_id) WHERE status <> 'CANCELLED';
 CREATE TABLE service_booking (
     service_booking_id  INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     production_id       INT NOT NULL REFERENCES production(production_id),
@@ -215,6 +217,7 @@ CREATE INDEX idx_equip_booking_sched    ON equipment_booking(schedule_id);
 CREATE INDEX idx_service_booking_prod   ON service_booking(production_id);
 CREATE INDEX idx_invoice_production     ON invoice(production_id);
 CREATE INDEX idx_payment_invoice        ON payment(invoice_id);
+CREATE INDEX idx_incident_status ON incident(status);
 
 -- Vector indexes (cosine distance)
 CREATE INDEX idx_location_embedding  ON location  USING hnsw (embedding vector_cosine_ops);
