@@ -128,3 +128,31 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_crew_clash
 BEFORE INSERT ON scene_crew
 FOR EACH ROW EXECUTE FUNCTION fn_crew_clash();
+
+-- 7. Resolving an incident: stamp resolved_at, restore the item if no other open damage incident
+CREATE OR REPLACE FUNCTION fn_incident_resolve() RETURNS trigger AS $$
+BEGIN
+    IF NEW.status = 'RESOLVED' AND OLD.status <> 'RESOLVED' THEN
+        NEW.resolved_at := COALESCE(NEW.resolved_at, CURRENT_TIMESTAMP);
+
+        IF NEW.type = 'equipment_damage' AND NOT EXISTS (
+               SELECT 1 FROM incident
+                WHERE equipment_id = NEW.equipment_id AND type = 'equipment_damage'
+                  AND status <> 'RESOLVED' AND incident_id <> NEW.incident_id) THEN
+            UPDATE equipment SET status = 'AVAILABLE'
+             WHERE equipment_id = NEW.equipment_id AND status = 'MAINTENANCE';
+        ELSIF NEW.type = 'location_damage' AND NOT EXISTS (
+               SELECT 1 FROM incident
+                WHERE location_id = NEW.location_id AND type = 'location_damage'
+                  AND status <> 'RESOLVED' AND incident_id <> NEW.incident_id) THEN
+            UPDATE location SET status = 'AVAILABLE'
+             WHERE location_id = NEW.location_id AND status = 'MAINTENANCE';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_incident_resolve
+BEFORE UPDATE ON incident
+FOR EACH ROW EXECUTE FUNCTION fn_incident_resolve();
