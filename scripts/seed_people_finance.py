@@ -28,7 +28,7 @@ rnd = random.Random(42)
 fake = Faker("en_IN")
 Faker.seed(42)
 
-DEMO_PASSWORD = "Password@123"
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "Password@123")
 TODAY = date.today()
 CENT = Decimal("0.01")
 
@@ -44,17 +44,18 @@ CREW_ROLES = ["Director of Photography", "Gaffer", "Sound Engineer", "Makeup Art
               "Art Director", "Editor", "Boom Operator", "Script Supervisor",
               "Stunt Coordinator", "Focus Puller"]
 
-# (name suffix, service_name used in bookings, hourly rate range in INR)
+# (name suffix, service_name used in bookings, hourly rate range in INR, vendor_type)
 VENDOR_TYPES = [
-    ("Catering Co", "Catering", (800, 2500)),
-    ("Transport Services", "Transport", (500, 1800)),
-    ("Security Services", "Security", (400, 1200)),
-    ("Costumes", "Costume Rental", (600, 2000)),
-    ("Makeup Studio", "Makeup & Hair", (700, 2200)),
-    ("VFX Labs", "VFX Support", (1500, 5000)),
-    ("Power & Generators", "Generator & Power", (900, 2800)),
-    ("Sets & Props", "Props Supply", (600, 2400)),
+    ("Catering Co", "Catering", (800, 2500), "catering"),
+    ("Transport Services", "Transport", (500, 1800), "transport"),
+    ("Security Services", "Security", (400, 1200), "security"),
+    ("Costumes", "Costume Rental", (600, 2000), "costume"),
+    ("Makeup Studio", "Makeup & Hair", (700, 2200), "makeup"),
+    ("VFX Labs", "VFX Support", (1500, 5000), "vfx"),
+    ("Power & Generators", "Generator & Power", (900, 2800), "power"),
+    ("Sets & Props", "Props Supply", (600, 2400), "props"),
 ]
+SERVICE_BY_TYPE = {vt: (service, rate) for _, service, rate, vt in VENDOR_TYPES}
 
 PAY_METHODS = ["UPI", "NEFT", "CHEQUE", "CARD"]
 
@@ -100,10 +101,10 @@ def seed_base(conn):
         if uid:  # keep the login name consistent with the crew record
             cur.execute("UPDATE users SET name=%s WHERE user_id=%s", (name, uid))
 
-    for i in range(N_VENDORS):
-        suffix = VENDOR_TYPES[i % len(VENDOR_TYPES)][0]
-        cur.execute("INSERT INTO vendor(name,contact_info) VALUES (%s,%s)",
-                    (f"{fake.last_name()} {suffix}", fake.company_email()))
+    for v in range(N_VENDORS):
+        suffix, _, _, v_type = VENDOR_TYPES[v % len(VENDOR_TYPES)]
+        cur.execute("INSERT INTO vendor(name,contact_info,vendor_type) VALUES (%s,%s,%s)",
+                    (f"{fake.last_name()} {suffix}", fake.company_email(), v_type))
 
     print(f"base: 1 admin, {N_MANAGERS} managers, {N_CREW_USERS} crew users, {N_HOUSES} houses, "
           f"{N_ACTORS} actors, {N_CREW} crew, {N_VENDORS} vendors")
@@ -153,12 +154,8 @@ def seed_finance(conn):
                 skip_crew += 1
 
     # ---- service bookings ----
-    cur.execute("SELECT vendor_id, name FROM vendor")
-    vendors = []
-    for vid, name in cur.fetchall():
-        for suffix, service, rate in VENDOR_TYPES:
-            if name.endswith(suffix):
-                vendors.append((vid, service, rate))
+    cur.execute("SELECT vendor_id, vendor_type FROM vendor")
+    vendors = [(vid, *SERVICE_BY_TYPE[vt]) for vid, vt in cur.fetchall()]
     cur.execute("SELECT production_id, start_date, planned_end_date, status FROM production")
     productions = cur.fetchall()
 
@@ -186,7 +183,7 @@ def seed_finance(conn):
 
     # ---- invoices + payments (payment trigger sets invoice status) ----
     cur.execute("SELECT production_id, production_total_cost(production_id) FROM production "
-                "WHERE status <> 'PLANNED'")
+                "WHERE status NOT IN ('PLANNED', 'CANCELLED')")
     n_inv = n_pay = 0
     for pid, cost in cur.fetchall():
         cost = Decimal(cost)
@@ -222,7 +219,7 @@ def seed_finance(conn):
                             (inv_id, amt, pay_date, rnd.choice(PAY_METHODS)))
                 n_pay += 1
 
-    cur.execute("UPDATE invoice SET status='OVERDUE' WHERE status='ISSUED' AND issue_date < %s",
+    cur.execute("UPDATE invoice SET status='OVERDUE' WHERE status IN ('ISSUED', 'PARTIALLY_PAID') AND issue_date < %s",
                 (TODAY - timedelta(days=45),))
 
     print(f"finance: cast {ok_cast} (skipped {skip_cast} clashes), crew {ok_crew} (skipped {skip_crew}), "
