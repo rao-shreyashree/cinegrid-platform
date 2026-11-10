@@ -28,11 +28,7 @@ rnd = random.Random(42)
 fake = Faker("en_IN")
 Faker.seed(42)
 
-<<<<<<< HEAD
-DEMO_PASSWORD = "Password@123"
-=======
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "Password@123")
->>>>>>> origin/feat/db-finance-talent
 TODAY = date.today()
 CENT = Decimal("0.01")
 
