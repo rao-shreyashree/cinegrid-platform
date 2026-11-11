@@ -17,6 +17,7 @@ export const ROUTE_ACCESS: { prefix: string; roles: Role[] }[] = [
   { prefix: "/incidents", roles: ALL_ROLES },
   { prefix: "/search", roles: ALL_ROLES },
   { prefix: "/my-work", roles: ["CREW"] },
+  { prefix: "/vendors", roles: ["ADMIN", "PRODUCTION_MANAGER"] },
 ];
 
 export function rolesForPath(pathname: string): Role[] | null {
