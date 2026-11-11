@@ -8,7 +8,6 @@
 -- =====================================================================
 
 -- 1. Find locations semantically similar to a specific location
--- (e.g., "Find sets similar to the Palace Interior Set")
 SELECT 
     l.name, 
     l.type, 
@@ -19,7 +18,6 @@ ORDER BY l.embedding <=> q.embedding
 LIMIT 5;
 
 -- 2. Find equipment semantically similar to a specific piece of equipment
--- (e.g., "Find gear similar to a Steadicam")
 SELECT 
     e.name, 
     e.category, 
@@ -29,7 +27,7 @@ FROM equipment e,
 ORDER BY e.embedding <=> q.embedding 
 LIMIT 5;
 
-)
+-- 3. Prove the HNSW indexes are being used (check execution plan)
 EXPLAIN ANALYZE 
 SELECT name FROM location 
 ORDER BY embedding <=> (SELECT embedding FROM location LIMIT 1) 
