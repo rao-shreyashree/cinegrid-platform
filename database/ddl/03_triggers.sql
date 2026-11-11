@@ -156,3 +156,44 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_incident_resolve
 BEFORE UPDATE ON incident
 FOR EACH ROW EXECUTE FUNCTION fn_incident_resolve();
+-- 8. Scheduling (or moving) a scene must not double-book its cast or crew.
+-- Mirror image of trigger 6: that one fires when cast/crew are added, this one when a shoot is scheduled or moved.
+-- AFTER trigger on purpose: the generated "during" column is not populated yet in BEFORE triggers.
+CREATE OR REPLACE FUNCTION fn_schedule_clash() RETURNS trigger AS $$
+DECLARE
+    v_actor INT;
+    v_crew  INT;
+BEGIN
+    IF NEW.status = 'CANCELLED' THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT sc.actor_id INTO v_actor
+    FROM scene_cast sc
+    JOIN scene_cast other_cast ON other_cast.actor_id = sc.actor_id AND other_cast.scene_id <> sc.scene_id
+    JOIN shooting_schedule other ON other.scene_id = other_cast.scene_id
+     AND other.status <> 'CANCELLED' AND other.during && NEW.during
+    WHERE sc.scene_id = NEW.scene_id
+    LIMIT 1;
+    IF v_actor IS NOT NULL THEN
+        RAISE EXCEPTION 'Actor % is already scheduled in an overlapping scene', v_actor;
+    END IF;
+
+    SELECT sc.crew_id INTO v_crew
+    FROM scene_crew sc
+    JOIN scene_crew other_crew ON other_crew.crew_id = sc.crew_id AND other_crew.scene_id <> sc.scene_id
+    JOIN shooting_schedule other ON other.scene_id = other_crew.scene_id
+     AND other.status <> 'CANCELLED' AND other.during && NEW.during
+    WHERE sc.scene_id = NEW.scene_id
+    LIMIT 1;
+    IF v_crew IS NOT NULL THEN
+        RAISE EXCEPTION 'Crew member % is already scheduled in an overlapping scene', v_crew;
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_schedule_clash
+AFTER INSERT OR UPDATE OF scene_id, shoot_date, start_time, end_time, status ON shooting_schedule
+FOR EACH ROW EXECUTE FUNCTION fn_schedule_clash();
