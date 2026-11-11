@@ -5,4 +5,6 @@ import { ALL_ROLES } from "./auth/roles";
 export const NAV: { href: string; label: string; roles: Role[] }[] = [
   { href: "/dashboard", label: "Dashboard", roles: ALL_ROLES },
   { href: "/finance", label: "Finance", roles: ["ADMIN", "PRODUCTION_MANAGER"] },
+  { href: "/people", label: "Actors and crew", roles: ["ADMIN", "PRODUCTION_MANAGER"] },
+  { href: "/my-work", label: "My schedule", roles: ["CREW"] },
 ];
