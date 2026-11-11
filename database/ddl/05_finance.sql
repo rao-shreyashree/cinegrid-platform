@@ -29,29 +29,10 @@ BEGIN
         RAISE EXCEPTION 'Production % not found', p_production_id;
     END IF;
 
-    SELECT COALESCE(SUM(c), 0), COUNT(*) INTO v_total, v_count
-    FROM (
-        SELECT ss.charge AS c
-          FROM shooting_schedule ss JOIN scene s ON s.scene_id = ss.scene_id
-         WHERE s.production_id = p_production_id AND ss.invoice_id IS NULL AND ss.status <> 'CANCELLED'
-        UNION ALL
-        SELECT eb.charge
-          FROM equipment_booking eb
-          JOIN shooting_schedule ss ON ss.schedule_id = eb.schedule_id
-          JOIN scene s ON s.scene_id = ss.scene_id
-         WHERE s.production_id = p_production_id AND eb.invoice_id IS NULL AND eb.status <> 'CANCELLED'
-        UNION ALL
-        SELECT sb.charge
-          FROM service_booking sb
-         WHERE sb.production_id = p_production_id AND sb.invoice_id IS NULL AND sb.status <> 'CANCELLED'
-    ) t;
-
-    IF v_count = 0 THEN
-        RAISE EXCEPTION 'Nothing to invoice for production %', p_production_id;
-    END IF;
-
+    -- Stamp first, then total what was actually stamped, so a booking that commits
+    -- mid-call can never be stamped without being counted.
     INSERT INTO invoice (production_id, total_amount, status, issue_date)
-    VALUES (p_production_id, v_total, 'ISSUED', p_issue_date)
+    VALUES (p_production_id, 0, 'ISSUED', p_issue_date)
     RETURNING invoice_id INTO v_inv;
 
     UPDATE shooting_schedule ss SET invoice_id = v_inv
@@ -66,6 +47,15 @@ BEGIN
 
     UPDATE service_booking SET invoice_id = v_inv
      WHERE production_id = p_production_id AND invoice_id IS NULL AND status <> 'CANCELLED';
+
+    SELECT COALESCE(SUM(charge), 0), COUNT(*) INTO v_total, v_count
+      FROM v_invoice_items WHERE invoice_id = v_inv;
+
+    IF v_count = 0 THEN
+        RAISE EXCEPTION 'Nothing to invoice for production %', p_production_id;  -- rollback removes the empty invoice
+    END IF;
+
+    UPDATE invoice SET total_amount = v_total WHERE invoice_id = v_inv;
 
     RETURN v_inv;
 END;
@@ -102,6 +92,8 @@ BEGIN
 
     SELECT budget INTO v_budget FROM production WHERE production_id = v_pid;
     IF v_budget IS NULL THEN
+        UPDATE budget_alert SET resolved_at = CURRENT_TIMESTAMP
+         WHERE production_id = v_pid AND resolved_at IS NULL;
         RETURN NULL;
     END IF;
 
