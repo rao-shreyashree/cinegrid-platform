@@ -1,4 +1,6 @@
 .env
+.pre-commit-config.yaml
 node_modules/
-next-env.d.ts
 .next/
+next-env.d.ts
+tsconfig.tsbuildinfo
