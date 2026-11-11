@@ -7,7 +7,9 @@ export const pool =
   globalForPg.pgPool ??
   new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
 
-pool.on("error", (err) => console.error("Idle pg client error:", err.message));
+if (!globalForPg.pgPool) {
+  pool.on("error", (err) => console.error("Idle pg client error:", err.message));
+}
 if (process.env.NODE_ENV !== "production") globalForPg.pgPool = pool;
 
 /** Parameterized query. ALWAYS pass user input via `params`, never string-concatenate it. */
