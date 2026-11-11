@@ -38,11 +38,12 @@ BEGIN
     ASSERT n = 3, 'T3 failed: expected 3 invoice items';
     RAISE NOTICE 'PASS T3: invoice % = 1100 with 3 items', inv1;
 
-    -- T4: nothing left to bill -> refused
+    -- T4: nothing left to bill -> refused with the right message
     BEGIN
         PERFORM generate_invoice(pid);
         ASSERT false, 'T4 failed: second invoice should have been refused';
     EXCEPTION WHEN raise_exception THEN
+        ASSERT SQLERRM LIKE 'Nothing to invoice%', 'T4 failed: wrong error: ' || SQLERRM;
         RAISE NOTICE 'PASS T4: second call refused (%)', SQLERRM;
     END;
 
@@ -66,6 +67,34 @@ BEGIN
     SELECT status INTO st FROM invoice WHERE invoice_id = inv1;
     ASSERT st = 'PAID', 'T7 failed: invoice not PAID';
     RAISE NOTICE 'PASS T7: invoice % is PAID', inv1;
+
+    -- T8: cancelling bookings lowers the cost and resolves the alert
+    UPDATE production SET budget = 1000 WHERE production_id = pid;          -- cost is 1700 -> alert opens
+    SELECT count(*) INTO n FROM budget_alert WHERE production_id = pid AND resolved_at IS NULL AND committed_cost = 1700;
+    ASSERT n = 1, 'T8 failed: alert should open at 1700 of 1000';
+    UPDATE shooting_schedule SET status = 'CANCELLED' WHERE schedule_id = sched2;   -- cost 1100, still over
+    SELECT count(*) INTO n FROM budget_alert WHERE production_id = pid AND resolved_at IS NULL AND committed_cost = 1100;
+    ASSERT n = 1, 'T8 failed: alert should update to 1100';
+    UPDATE service_booking SET status = 'CANCELLED' WHERE production_id = pid;      -- cost 700, back under
+    SELECT count(*) INTO n FROM budget_alert WHERE production_id = pid AND resolved_at IS NULL;
+    ASSERT n = 0, 'T8 failed: alert should resolve at 700 of 1000';
+    RAISE NOTICE 'PASS T8: cancellations update and resolve the alert';
+
+    -- T9: clearing the budget resolves an open alert
+    UPDATE production SET budget = 500 WHERE production_id = pid;           -- 700 > 500 -> opens
+    UPDATE production SET budget = NULL WHERE production_id = pid;
+    SELECT count(*) INTO n FROM budget_alert WHERE production_id = pid AND resolved_at IS NULL;
+    ASSERT n = 0, 'T9 failed: alert should resolve when budget is cleared';
+    RAISE NOTICE 'PASS T9: alert resolved when budget cleared';
+
+    -- T10: missing production
+    BEGIN
+        PERFORM generate_invoice(-1);
+        ASSERT false, 'T10 failed: missing production should have been refused';
+    EXCEPTION WHEN raise_exception THEN
+        ASSERT SQLERRM LIKE 'Production % not found', 'T10 failed: wrong error: ' || SQLERRM;
+        RAISE NOTICE 'PASS T10: missing production refused';
+    END;
 
     RAISE NOTICE 'ALL FINANCE TESTS PASSED';
 END $$;
