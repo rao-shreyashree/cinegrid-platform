@@ -9,4 +9,7 @@ export const NAV: { href: string; label: string; roles: Role[] }[] = [
   { href: "/my-work", label: "My schedule", roles: ["CREW"] },
   { href: "/search",  label: "Search",  roles: ["ADMIN", "PRODUCTION_MANAGER"] },
   { href: "/vendors", label: "Vendors", roles: ["ADMIN", "PRODUCTION_MANAGER"] },
+  { href: "/schedule", label: "Calendar", roles: ALL_ROLES },
+  { href: "/bookings", label: "Bookings", roles: ["ADMIN", "PRODUCTION_MANAGER"] },
+  { href: "/incidents", label: "Incidents", roles: ALL_ROLES },
 ];
