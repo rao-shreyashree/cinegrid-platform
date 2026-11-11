@@ -110,14 +110,6 @@ def seed_base(conn):
           f"{N_ACTORS} actors, {N_CREW} crew, {N_VENDORS} vendors")
 
 
-def _split(total, parts):
-    """Split a Decimal total into `parts` positive random chunks summing exactly to total."""
-    weights = [rnd.uniform(0.5, 1.5) for _ in range(parts)]
-    s = sum(weights)
-    amounts = [(total * Decimal(str(w / s))).quantize(CENT) for w in weights[:-1]]
-    amounts.append(total - sum(amounts))
-    return amounts
-
 
 def seed_finance(conn):
     cur = conn.cursor()
@@ -181,43 +173,42 @@ def seed_finance(conn):
                 (pid, vid, service, start, start + timedelta(hours=hours), charge, st))
             n_service += 1
 
-    # ---- invoices + payments (payment trigger sets invoice status) ----
-    cur.execute("SELECT production_id, production_total_cost(production_id) FROM production "
-                "WHERE status NOT IN ('PLANNED', 'CANCELLED')")
+    # ---- invoices via the real generate_invoice() (each production's bookings billed once) + payments ----
+    cur.execute("SELECT production_id FROM production "
+                "WHERE status NOT IN ('PLANNED', 'CANCELLED') ORDER BY production_id")
     n_inv = n_pay = 0
-    for pid, cost in cur.fetchall():
-        cost = Decimal(cost)
-        if cost <= 0:
-            cost = Decimal(rnd.randint(50000, 500000))
-        for total in _split(cost, rnd.choice([1, 2, 3])):
-            if total <= 0:
-                continue
-            issue = TODAY - timedelta(days=rnd.randint(5, 240))
-            draft = rnd.random() < 0.04
-            cur.execute("INSERT INTO invoice(production_id,total_amount,status,issue_date) "
-                        "VALUES (%s,%s,%s,%s) RETURNING invoice_id",
-                        (pid, total, "DRAFT" if draft else "ISSUED", None if draft else issue))
-            inv_id = cur.fetchone()[0]
-            n_inv += 1
-            if draft:
-                continue
-            r = rnd.random()
-            if r < 0.45:
-                target = total                                     # fully paid
-            elif r < 0.70:
-                target = (total * Decimal(str(rnd.uniform(0.3, 0.8)))).quantize(CENT)  # partial
-            else:
-                continue                                           # unpaid
-            if target <= 0:
-                continue
-            parts = rnd.randint(1, 3) if target >= 3 else 1
-            amounts = [(target / parts).quantize(CENT)] * (parts - 1)
-            amounts.append(target - sum(amounts))
-            for amt in amounts:
-                pay_date = min(issue + timedelta(days=rnd.randint(3, 60)), TODAY)
-                cur.execute("INSERT INTO payment(invoice_id,amount,payment_date,method) VALUES (%s,%s,%s,%s)",
-                            (inv_id, amt, pay_date, rnd.choice(PAY_METHODS)))
-                n_pay += 1
+    for (pid,) in cur.fetchall():
+        issue = TODAY - timedelta(days=rnd.randint(5, 240))
+        try:
+            with conn.transaction():  # savepoint: a production with nothing to bill is just skipped
+                cur.execute("SELECT generate_invoice(%s, %s)", (pid, issue))
+                inv_id = cur.fetchone()[0]
+        except psycopg.errors.RaiseException:
+            continue
+        n_inv += 1
+        cur.execute("SELECT total_amount FROM invoice WHERE invoice_id = %s", (inv_id,))
+        total = Decimal(cur.fetchone()[0])
+
+        if rnd.random() < 0.04:  # a few drafts; they take no payments
+            cur.execute("UPDATE invoice SET status='DRAFT', issue_date=NULL WHERE invoice_id=%s", (inv_id,))
+            continue
+        r = rnd.random()
+        if r < 0.45:
+            target = total                                                       # fully paid
+        elif r < 0.70:
+            target = (total * Decimal(str(rnd.uniform(0.3, 0.8)))).quantize(CENT)  # partial
+        else:
+            continue                                                             # unpaid
+        if target <= 0:
+            continue
+        parts = rnd.randint(1, 3) if target >= 3 else 1
+        amounts = [(target / parts).quantize(CENT)] * (parts - 1)
+        amounts.append(target - sum(amounts))
+        for amt in amounts:
+            pay_date = min(issue + timedelta(days=rnd.randint(3, 60)), TODAY)
+            cur.execute("INSERT INTO payment(invoice_id,amount,payment_date,method) VALUES (%s,%s,%s,%s)",
+                        (inv_id, amt, pay_date, rnd.choice(PAY_METHODS)))
+            n_pay += 1
 
     cur.execute("UPDATE invoice SET status='OVERDUE' WHERE status IN ('ISSUED', 'PARTIALLY_PAID') AND issue_date < %s",
                 (TODAY - timedelta(days=45),))
